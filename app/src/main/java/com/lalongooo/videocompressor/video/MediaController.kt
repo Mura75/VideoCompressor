@@ -325,6 +325,7 @@ class MediaController {
                                 outputSurface = OutputSurface(resultWidth, resultHeight, rotateRender)
                             }
 
+                            // start decoder
                             decoder = MediaCodec.createDecoderByType(inputFormat.getString(MediaFormat.KEY_MIME))
                             decoder.configure(inputFormat, outputSurface.surface, null, 0)
                             decoder.start()
@@ -550,7 +551,7 @@ class MediaController {
                 }
                 if (mediaMuxer != null) {
                     try {
-                        mediaMuxer.finishMovie(false)
+                        mediaMuxer.finishMovie()
                     } catch (e: Exception) {
                         Log.e("tmessages", e.message)
                     }

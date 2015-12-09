@@ -121,7 +121,7 @@ public class MainActivity extends Activity {
 
         @Override
         protected Boolean doInBackground(Void... voids) {
-            return MediaController.getInstance().convertVideo(tempFile.getPath());
+            return MediaController.Companion.getInstance().convertVideo(tempFile.getPath());
         }
 
         @Override

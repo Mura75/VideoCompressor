@@ -293,15 +293,8 @@ class MediaController {
                                 }
                             }
 
-                            extractor.selectTrack(videoIndex)
-                            if (startTime > 0) {
-                                extractor.seekTo(startTime, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-                            } else {
-                                extractor.seekTo(0, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-                            }
-
                             // setup input and output formats
-                            val inputFormat = extractor.getTrackFormat(videoIndex)
+                            val inputFormat = buildInputFormat(extractor, startTime, videoIndex)
                             val outputFormat = buildOutputFormat(bitrate, colorFormat, resultHeight, resultWidth)
 
                             // start the encoder and create the input surface if needed
@@ -324,6 +317,18 @@ class MediaController {
                             decoder.configure(inputFormat, outputSurface.surface, null, 0)
                             decoder.start()
 
+                            var decoderInputBuffers: Array<ByteBuffer>? = null;
+                            var encoderOutputBuffers: Array<ByteBuffer>? = null;
+                            var encoderInputBuffers: Array<ByteBuffer>? = null;
+                            if (Build.VERSION.SDK_INT < 21) {
+                                decoderInputBuffers = decoder.inputBuffers
+                                encoderOutputBuffers = encoder.outputBuffers
+
+                                if (Build.VERSION.SDK_INT < 18) {
+                                    encoderInputBuffers = encoder.inputBuffers
+                                }
+                            }
+
                             val TIMEOUT_USEC = 2500
                             while (!outputDone) {
                                 if (!inputDone) {
@@ -334,10 +339,11 @@ class MediaController {
                                         if (inputBufIndex >= 0) {
                                             val inputBuf: ByteBuffer
                                             if (Build.VERSION.SDK_INT < 21) {
-                                                inputBuf = decoder.getInputBuffer(inputBufIndex)
+                                                inputBuf = decoderInputBuffers!![inputBufIndex]
                                             } else {
-                                                inputBuf = decoder.getInputBuffer(inputBufIndex)
+                                                inputBuf = decoder.getInputBuffer(inputBufIndex);
                                             }
+
                                             val chunkSize = extractor.readSampleData(inputBuf, 0)
                                             if (chunkSize < 0) {
                                                 decoder.queueInputBuffer(inputBufIndex, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
@@ -366,6 +372,9 @@ class MediaController {
                                     if (encoderStatus == MediaCodec.INFO_TRY_AGAIN_LATER) {
                                         encoderOutputAvailable = false
                                     } else if (encoderStatus == MediaCodec.INFO_OUTPUT_BUFFERS_CHANGED) {
+                                        if (Build.VERSION.SDK_INT < 21) {
+                                            encoderOutputBuffers = encoder.outputBuffers
+                                        }
                                     } else if (encoderStatus == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                                         val newFormat = encoder.outputFormat
                                         if (videoTrackIndex == -5) {
@@ -376,7 +385,7 @@ class MediaController {
                                     } else {
                                         val encodedData: ByteBuffer?
                                         if (Build.VERSION.SDK_INT < 21) {
-                                            encodedData = encoder.getOutputBuffer(encoderStatus)
+                                            encodedData = encoderOutputBuffers!![encoderStatus]
                                         } else {
                                             encodedData = encoder.getOutputBuffer(encoderStatus)
                                         }
@@ -512,19 +521,17 @@ class MediaController {
 
                         extractor.unselectTrack(videoIndex)
 
-                        if (outputSurface != null) {
-                            outputSurface.release()
+                        outputSurface?.release()
+                        inputSurface?.release()
+
+                        decoder?.let {
+                            it.stop()
+                            it.release()
                         }
-                        if (inputSurface != null) {
-                            inputSurface.release()
-                        }
-                        if (decoder != null) {
-                            decoder.stop()
-                            decoder.release()
-                        }
-                        if (encoder != null) {
-                            encoder.stop()
-                            encoder.release()
+
+                        encoder?.let {
+                            it.stop()
+                            it.release()
                         }
                     }
                 } else {
@@ -537,7 +544,6 @@ class MediaController {
                     readAndWriteTrack(extractor, mediaMuxer, info, videoStartTime, endTime, cacheFile, true)
                 }
             } catch (e: Exception) {
-                error = true
                 Log.e("tmessages", e.message)
             } finally {
                 if (extractor != null) {
@@ -561,6 +567,19 @@ class MediaController {
 
         inputFile.delete()
         return true
+    }
+
+    private fun buildInputFormat(extractor: MediaExtractor, startTime: Long, videoIndex: Int): MediaFormat {
+        with(extractor) {
+            selectTrack(videoIndex)
+            if (startTime > 0) {
+                seekTo(startTime, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+            } else {
+                seekTo(0, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+            }
+        }
+
+        return extractor.getTrackFormat(videoIndex)
     }
 
     private fun buildOutputFormat(bitrate: Int, colorFormat: Int, resultHeight: Int, resultWidth: Int): MediaFormat? {

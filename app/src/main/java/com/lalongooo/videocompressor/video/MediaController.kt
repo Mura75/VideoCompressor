@@ -299,18 +299,12 @@ class MediaController {
                             } else {
                                 extractor.seekTo(0, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
                             }
+
+                            // setup input and output formats
                             val inputFormat = extractor.getTrackFormat(videoIndex)
+                            val outputFormat = buildOutputFormat(bitrate, colorFormat, resultHeight, resultWidth)
 
-                            val outputFormat = MediaFormat.createVideoFormat(MIME_TYPE, resultWidth, resultHeight)
-                            outputFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, colorFormat)
-                            outputFormat.setInteger(MediaFormat.KEY_BIT_RATE, if (bitrate != 0) bitrate else 921600)
-                            outputFormat.setInteger(MediaFormat.KEY_FRAME_RATE, 25)
-                            outputFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 10)
-                            if (Build.VERSION.SDK_INT < 18) {
-                                outputFormat.setInteger("stride", resultWidth + 32)
-                                outputFormat.setInteger("slice-height", resultHeight)
-                            }
-
+                            // start the encoder and create the input surface if needed
                             encoder = MediaCodec.createEncoderByType(MIME_TYPE)
                             encoder.configure(outputFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
                             if (Build.VERSION.SDK_INT >= 18) {
@@ -567,6 +561,19 @@ class MediaController {
 
         inputFile.delete()
         return true
+    }
+
+    private fun buildOutputFormat(bitrate: Int, colorFormat: Int, resultHeight: Int, resultWidth: Int): MediaFormat? {
+        val outputFormat = MediaFormat.createVideoFormat(MIME_TYPE, resultWidth, resultHeight)
+        outputFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, colorFormat)
+        outputFormat.setInteger(MediaFormat.KEY_BIT_RATE, if (bitrate != 0) bitrate else 921600)
+        outputFormat.setInteger(MediaFormat.KEY_FRAME_RATE, 25)
+        outputFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 10)
+        if (Build.VERSION.SDK_INT < 18) {
+            outputFormat.setInteger("stride", resultWidth + 32)
+            outputFormat.setInteger("slice-height", resultHeight)
+        }
+        return outputFormat
     }
 
     companion object {

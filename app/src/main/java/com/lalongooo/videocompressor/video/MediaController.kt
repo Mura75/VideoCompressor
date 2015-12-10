@@ -1,6 +1,7 @@
 package com.lalongooo.videocompressor.video
 
 import android.annotation.SuppressLint
+import android.graphics.Bitmap
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaCodecList
@@ -12,6 +13,7 @@ import android.os.Environment
 import android.util.Log
 
 import com.lalongooo.videocompressor.Config
+import wseemann.media.FFmpegMediaMetadataRetriever
 
 import java.io.File
 import java.nio.ByteBuffer
@@ -19,7 +21,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class MediaController {
+public class MediaController {
+
     private var videoConvertFirstWrite = true
 
     private fun didWriteData() {
@@ -136,12 +139,16 @@ class MediaController {
     }
 
     fun convertVideo(path: String): Boolean {
+        val mediaRetriever = MediaMetadataRetriever()
+        mediaRetriever.setDataSource(path)
+        val width = mediaRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+        val height = mediaRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
 
-        val retriever = MediaMetadataRetriever()
-        retriever.setDataSource(path)
-        val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
-        val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
-        val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+        val ffpMpegRetriever = FFmpegMediaMetadataRetriever()
+        ffpMpegRetriever.setDataSource(path);
+        val rotation = ffpMpegRetriever.extractMetadata(FFmpegMediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+        val duration = ffpMpegRetriever.extractMetadata(FFmpegMediaMetadataRetriever.METADATA_KEY_DURATION)
+        ffpMpegRetriever.release();
 
         val startTime: Long = -1L
         val endTime: Long = -1L
@@ -152,6 +159,7 @@ class MediaController {
         var rotationValue = Integer.valueOf(rotation)!!
         val originalWidth = Integer.valueOf(width)!!
         val originalHeight = Integer.valueOf(height)!!
+        val originalDuration = duration.toLong()
 
         val bitrate = 400000
         var rotateRender = 0
@@ -337,6 +345,7 @@ class MediaController {
                                     if (index == videoIndex) {
                                         val inputBufIndex = decoder.dequeueInputBuffer(TIMEOUT_USEC.toLong())
                                         if (inputBufIndex >= 0) {
+                                            Log.d("cenas", "Time: ${extractor.sampleTime / 1000000} /  ${originalDuration / 1000}")
                                             val inputBuf: ByteBuffer
                                             if (Build.VERSION.SDK_INT < 21) {
                                                 inputBuf = decoderInputBuffers!![inputBufIndex]
@@ -485,7 +494,7 @@ class MediaController {
                                                         if (inputBufIndex >= 0) {
                                                             outputSurface.drawImage(true)
                                                             val rgbBuf = outputSurface.frame
-                                                            val yuvBuf = encoder.getInputBuffer(inputBufIndex)
+                                                            val yuvBuf = encoderInputBuffers!![inputBufIndex]
                                                             yuvBuf.clear()
                                                             convertVideoFrame(rgbBuf, yuvBuf, colorFormat, resultWidth, resultHeight, padding, swapUV)
                                                             encoder.queueInputBuffer(inputBufIndex, 0, bufferSize, info.presentationTimeUs, 0)
@@ -630,18 +639,25 @@ class MediaController {
                 MediaCodecInfo.CodecCapabilities.COLOR_TI_FormatYUV420PackedSemiPlanar).contains(colorFormat)
     }
 
+
     external fun convertVideoFrame(src: ByteBuffer, dest: ByteBuffer, destFormat: Int, width: Int, height: Int, padding: Int, swap: Int): Int
 
     fun selectCodec(mimeType: String): MediaCodecInfo? {
+        val numCodecs = MediaCodecList.getCodecCount()
         var lastCodecInfo: MediaCodecInfo? = null
-        val codecs = MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos.filter { it.isEncoder }
-        for (codec in codecs) {
-            val types = codec.supportedTypes
+        for (i in 0..numCodecs - 1) {
+            val codecInfo = MediaCodecList.getCodecInfoAt(i)
+            if (!codecInfo.isEncoder) {
+                continue
+            }
+            val types = codecInfo.supportedTypes
             for (type in types) {
                 if (type.equals(mimeType, ignoreCase = true)) {
-                    lastCodecInfo = codec
-                    if (lastCodecInfo?.name != "OMX.SEC.avc.enc" || lastCodecInfo?.name == "OMX.SEC.AVC.Encoder") {
-                        return codec
+                    lastCodecInfo = codecInfo
+                    if (lastCodecInfo!!.name != "OMX.SEC.avc.enc") {
+                        return lastCodecInfo
+                    } else if (lastCodecInfo.name == "OMX.SEC.AVC.Encoder") {
+                        return lastCodecInfo
                     }
                 }
             }

@@ -48,4 +48,5 @@ dependencies {
     compile files('libs/isoparser-1.0.6.jar')
 
     compile "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+    compile 'com.github.wseemann:FFmpegMediaMetadataRetriever:1.0.2'
 }

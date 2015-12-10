@@ -10,6 +10,8 @@ package com.lalongooo.videocompressor.video;
 
 import android.annotation.TargetApi;
 import android.media.MediaCodec;
+import android.media.MediaCodecInfo;
+import android.media.MediaCodecList;
 import android.media.MediaFormat;
 
 import com.googlecode.mp4parser.util.Matrix;
@@ -56,6 +58,7 @@ public class Mp4Movie {
     public void setSize(int w, int h) {
         width = w;
         height = h;
+
     }
 
     public ArrayList<Track> getTracks() {

@@ -5,7 +5,6 @@ import android.app.Activity;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
-import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.OpenableColumns;
@@ -13,11 +12,17 @@ import android.util.Log;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.ProgressBar;
+import android.widget.TextView;
 
 import com.lalongooo.videocompressor.file.FileUtils;
+import com.lalongooo.videocompressor.progress.CompressionProgress;
 import com.lalongooo.videocompressor.video.MediaController;
 
 import java.io.File;
+
+import rx.Observer;
+import rx.android.schedulers.AndroidSchedulers;
+import rx.schedulers.Schedulers;
 
 
 public class MainActivity extends Activity {
@@ -27,6 +32,7 @@ public class MainActivity extends Activity {
     private EditText editText;
     private ProgressBar progressBar;
     private File tempFile;
+    private TextView progressTv;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -34,6 +40,7 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
         progressBar = (ProgressBar) findViewById(R.id.progressBar);
         editText = (EditText) findViewById(R.id.editText);
+        progressTv = (TextView) findViewById(R.id.progressTv);
 
         findViewById(R.id.btnSelectVideo).setOnClickListener(new View.OnClickListener() {
             @Override
@@ -87,8 +94,8 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void deleteTempFile(){
-        if(tempFile != null && tempFile.exists()){
+    private void deleteTempFile() {
+        if (tempFile != null && tempFile.exists()) {
             tempFile.delete();
         }
     }
@@ -106,32 +113,32 @@ public class MainActivity extends Activity {
     }
 
     public void compress(View v) {
-//        MediaController.getInstance().scheduleVideoConvert(tempFile.getPath());
-        new VideoCompressor().execute();
+        Log.d(TAG, "Start video compression");
+        MediaController mediaController = new MediaController();
+        mediaController.compressVideo(tempFile.getPath());
+        progressBar.setVisibility(View.VISIBLE);
+        mediaController.getProgressSubject()
+                .subscribeOn(Schedulers.newThread())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(new Observer<CompressionProgress>() {
+                    @Override
+                    public void onCompleted() {
+                        Log.d(TAG, "Ended compression");
+                        progressBar.setVisibility(View.GONE);
+                    }
+
+                    @Override
+                    public void onError(Throwable e) {
+                        Log.e(TAG, e.getMessage());
+                        progressBar.setVisibility(View.GONE);
+                    }
+
+                    @Override
+                    public void onNext(CompressionProgress compressionProgress) {
+                        float percentage = compressionProgress.getPercentage();
+                        progressTv.setText("Progress: " + percentage);
+                    }
+                });
+
     }
-
-    class VideoCompressor extends AsyncTask<Void, Void, Boolean>{
-
-        @Override
-        protected void onPreExecute() {
-            super.onPreExecute();
-            progressBar.setVisibility(View.VISIBLE);
-            Log.d(TAG,"Start video compression");
-        }
-
-        @Override
-        protected Boolean doInBackground(Void... voids) {
-            return MediaController.Companion.getInstance().convertVideo(tempFile.getPath());
-        }
-
-        @Override
-        protected void onPostExecute(Boolean compressed) {
-            super.onPostExecute(compressed);
-            progressBar.setVisibility(View.GONE);
-            if(compressed){
-                Log.d(TAG,"Compression successfully!");
-            }
-        }
-    }
-
 }

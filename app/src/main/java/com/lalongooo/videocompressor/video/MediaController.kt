@@ -13,6 +13,8 @@ import android.os.Environment
 import android.util.Log
 
 import com.lalongooo.videocompressor.Config
+import com.lalongooo.videocompressor.progress.CompressionProgress
+import rx.subjects.BehaviorSubject
 import wseemann.media.FFmpegMediaMetadataRetriever
 
 import java.io.File
@@ -23,14 +25,7 @@ import java.util.Locale
 
 public class MediaController {
 
-    private var videoConvertFirstWrite = true
-
-    private fun didWriteData() {
-        val firstWrite = videoConvertFirstWrite
-        if (firstWrite) {
-            videoConvertFirstWrite = false
-        }
-    }
+    var progressSubject = BehaviorSubject.create(CompressionProgress(0, 0))
 
     class VideoConvertRunnable private constructor(private val videoPath: String) : Runnable {
 
@@ -98,9 +93,7 @@ public class MediaController {
                         if (end < 0 || info.presentationTimeUs < end) {
                             info.offset = 0
                             info.flags = extractor.sampleFlags
-                            if (mediaMuxer.writeSampleData(muxerTrackIndex, buffer, info, isAudio)) {
-                                didWriteData();
-                            }
+                            mediaMuxer.writeSampleData(muxerTrackIndex, buffer, info, isAudio)
                             extractor.advance()
                         } else {
                             eof = true
@@ -138,17 +131,39 @@ public class MediaController {
         return -5
     }
 
-    fun convertVideo(path: String): Boolean {
+    class Compressor : Runnable {
+        override fun run() {
+
+        }
+
+    }
+
+    fun compressVideo(path: String) {
+        Thread(Runnable {
+            convertVideo(path)
+        }).start()
+    }
+
+    private fun convertVideo(path: String): Boolean {
+
         val mediaRetriever = MediaMetadataRetriever()
         mediaRetriever.setDataSource(path)
         val width = mediaRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
         val height = mediaRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
 
-        val ffpMpegRetriever = FFmpegMediaMetadataRetriever()
-        ffpMpegRetriever.setDataSource(path);
-        val rotation = ffpMpegRetriever.extractMetadata(FFmpegMediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
-        val duration = ffpMpegRetriever.extractMetadata(FFmpegMediaMetadataRetriever.METADATA_KEY_DURATION)
-        ffpMpegRetriever.release();
+        var rotation: String
+        var duration: String
+
+        if (Build.VERSION.SDK_INT < 18) {
+            val ffpMpegRetriever = FFmpegMediaMetadataRetriever()
+            ffpMpegRetriever.setDataSource(path);
+            rotation = ffpMpegRetriever.extractMetadata(FFmpegMediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+            duration = ffpMpegRetriever.extractMetadata(FFmpegMediaMetadataRetriever.METADATA_KEY_DURATION)
+            ffpMpegRetriever.release();
+        } else {
+            rotation = mediaRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+            duration = mediaRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+        }
 
         val startTime: Long = -1L
         val endTime: Long = -1L
@@ -163,6 +178,8 @@ public class MediaController {
 
         val bitrate = 400000
         var rotateRender = 0
+
+        progressSubject.onNext(CompressionProgress(0, originalDuration))
 
         val cacheFile = File("${Environment.getExternalStorageDirectory()}${File.separator}${Config.VIDEO_COMPRESSOR_APPLICATION_DIR_NAME}${Config.VIDEO_COMPRESSOR_COMPRESSED_VIDEOS_DIR}VIDEO_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.mp4")
 
@@ -194,11 +211,9 @@ public class MediaController {
 
         val inputFile = File(path)
         if (!inputFile.canRead()) {
-            didWriteData()
             return false
         }
 
-        videoConvertFirstWrite = true
         var error = false
         var videoStartTime = startTime
 
@@ -345,7 +360,11 @@ public class MediaController {
                                     if (index == videoIndex) {
                                         val inputBufIndex = decoder.dequeueInputBuffer(TIMEOUT_USEC.toLong())
                                         if (inputBufIndex >= 0) {
-                                            Log.d("cenas", "Time: ${extractor.sampleTime / 1000000} /  ${originalDuration / 1000}")
+                                            val processedDuration = extractor.sampleTime / 1000000
+                                            val totalDuration = originalDuration / 1000
+                                            progressSubject.onNext(CompressionProgress(processedDuration, totalDuration))
+                                            Log.d("VideoCompressor", "Internal Progress: $processedDuration/$totalDuration")
+
                                             val inputBuf: ByteBuffer
                                             if (Build.VERSION.SDK_INT < 21) {
                                                 inputBuf = decoderInputBuffers!![inputBufIndex]
@@ -390,7 +409,8 @@ public class MediaController {
                                             videoTrackIndex = mediaMuxer!!.addTrack(newFormat, false)
                                         }
                                     } else if (encoderStatus < 0) {
-                                        throw RuntimeException("unexpected result from encoder.dequeueOutputBuffer: " + encoderStatus)
+                                        progressSubject.onError(RuntimeException("unexpected result from encoder.dequeueOutputBuffer: " + encoderStatus))
+                                        Log.e("VideoCompressor", "unexpected result from encoder.dequeueOutputBuffer: " + encoderStatus)
                                     } else {
                                         val encodedData: ByteBuffer?
                                         if (Build.VERSION.SDK_INT < 21) {
@@ -399,13 +419,12 @@ public class MediaController {
                                             encodedData = encoder.getOutputBuffer(encoderStatus)
                                         }
                                         if (encodedData == null) {
-                                            throw RuntimeException("encoderOutputBuffer $encoderStatus was null")
+                                            progressSubject.onError(RuntimeException("encoderOutputBuffer $encoderStatus was null"))
+                                            return false
                                         }
                                         if (info.size > 1) {
                                             if ((info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
-                                                if (mediaMuxer!!.writeSampleData(videoTrackIndex, encodedData, info, false)) {
-                                                    didWriteData()
-                                                }
+                                                mediaMuxer!!.writeSampleData(videoTrackIndex, encodedData, info, false)
                                             } else if (videoTrackIndex == -5) {
                                                 val csd = ByteArray(info.size)
                                                 encodedData.limit(info.offset + info.size)
@@ -452,7 +471,7 @@ public class MediaController {
                                             val newFormat = decoder.outputFormat
                                             Log.e("tmessages", "newFormat = " + newFormat)
                                         } else if (decoderStatus < 0) {
-                                            throw RuntimeException("unexpected result from decoder.dequeueOutputBuffer: " + decoderStatus)
+                                            progressSubject.onError(RuntimeException("unexpected result from decoder.dequeueOutputBuffer: " + decoderStatus))
                                         } else {
                                             var doRender: Boolean
                                             if (Build.VERSION.SDK_INT >= 18) {
@@ -499,7 +518,7 @@ public class MediaController {
                                                             convertVideoFrame(rgbBuf, yuvBuf, colorFormat, resultWidth, resultHeight, padding, swapUV)
                                                             encoder.queueInputBuffer(inputBufIndex, 0, bufferSize, info.presentationTimeUs, 0)
                                                         } else {
-                                                            Log.e("tmessages", "input buffer not available")
+                                                            Log.w("tmessages", "input buffer not available")
                                                         }
                                                     }
                                                 }
@@ -551,9 +570,11 @@ public class MediaController {
                 }
                 if (!error) {
                     readAndWriteTrack(extractor, mediaMuxer, info, videoStartTime, endTime, cacheFile, true)
+                    progressSubject.onCompleted()
                 }
             } catch (e: Exception) {
                 Log.e("tmessages", e.message)
+                progressSubject.onError(e)
             } finally {
                 if (extractor != null) {
                     extractor.release()
@@ -563,16 +584,15 @@ public class MediaController {
                         mediaMuxer.finishMovie()
                     } catch (e: Exception) {
                         Log.e("tmessages", e.message)
+                        progressSubject.onError(e)
                     }
 
                 }
                 Log.e("tmessages", "time = " + (System.currentTimeMillis() - time))
             }
         } else {
-            didWriteData()
             return false
         }
-        didWriteData()
 
         inputFile.delete()
         return true
@@ -616,7 +636,6 @@ public class MediaController {
 
         val instance: MediaController = MediaController()
 
-        @SuppressLint("NewApi")
         fun selectColorFormat(codecInfo: MediaCodecInfo, mimeType: String): Int {
             val capabilities = codecInfo.getCapabilitiesForType(mimeType)
             var lastColorFormat = 0

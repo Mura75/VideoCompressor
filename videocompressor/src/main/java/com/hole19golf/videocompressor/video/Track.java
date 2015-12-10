@@ -6,7 +6,7 @@
  * Copyright Nikolai Kudashov, 2013-2014.
  */
 
-package com.lalongooo.videocompressor.video;
+package com.hole19golf.videocompressor.video;
 
 import android.media.MediaCodec;
 import android.media.MediaFormat;

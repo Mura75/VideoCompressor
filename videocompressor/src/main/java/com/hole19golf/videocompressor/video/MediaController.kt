@@ -1,62 +1,16 @@
-package com.lalongooo.videocompressor.video
-
-import android.annotation.SuppressLint
-import android.graphics.Bitmap
-import android.media.MediaCodec
-import android.media.MediaCodecInfo
-import android.media.MediaCodecList
-import android.media.MediaExtractor
-import android.media.MediaFormat
-import android.media.MediaMetadataRetriever
+package com.hole19golf.videocompressor.video
+import android.media.*
 import android.os.Build
-import android.os.Environment
 import android.util.Log
-
-import com.lalongooo.videocompressor.Config
-import com.lalongooo.videocompressor.progress.CompressionProgress
+import com.lalongooo.videocompressor.video.InputSurface
 import rx.subjects.BehaviorSubject
 import wseemann.media.FFmpegMediaMetadataRetriever
-
 import java.io.File
 import java.nio.ByteBuffer
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 public class MediaController {
 
     var progressSubject = BehaviorSubject.create(CompressionProgress(0, 0))
-
-    class VideoConvertRunnable private constructor(private val videoPath: String) : Runnable {
-
-        override fun run() {
-            MediaController.instance.convertVideo(videoPath)
-        }
-
-        companion object {
-
-            fun runConversion(videoPath: String) {
-                Thread(Runnable {
-                    try {
-                        val wrapper = VideoConvertRunnable(videoPath)
-                        val th = Thread(wrapper, "VideoConvertRunnable")
-                        th.start()
-                        th.join()
-                    } catch (e: Exception) {
-                        Log.e("tmessages", e.message)
-                    }
-                }).start()
-            }
-        }
-    }
-
-    fun scheduleVideoConvert(path: String) {
-        startVideoConvertFromQueue(path)
-    }
-
-    private fun startVideoConvertFromQueue(path: String) {
-        VideoConvertRunnable.runConversion(path)
-    }
 
     @Throws(Exception::class)
     private fun readAndWriteTrack(extractor: MediaExtractor, mediaMuxer: MP4Builder, info: MediaCodec.BufferInfo, start: Long, end: Long, file: File, isAudio: Boolean): Long {
@@ -131,20 +85,13 @@ public class MediaController {
         return -5
     }
 
-    class Compressor : Runnable {
-        override fun run() {
-
-        }
-
-    }
-
-    fun compressVideo(path: String) {
+    fun compressVideo(path: String, outputPath: String) {
         Thread(Runnable {
-            convertVideo(path)
+            convertVideo(path, outputPath)
         }).start()
     }
 
-    private fun convertVideo(path: String): Boolean {
+    private fun convertVideo(path: String, outputPath: String): Boolean {
 
         val mediaRetriever = MediaMetadataRetriever()
         mediaRetriever.setDataSource(path)
@@ -181,7 +128,7 @@ public class MediaController {
 
         progressSubject.onNext(CompressionProgress(0, originalDuration))
 
-        val cacheFile = File("${Environment.getExternalStorageDirectory()}${File.separator}${Config.VIDEO_COMPRESSOR_APPLICATION_DIR_NAME}${Config.VIDEO_COMPRESSOR_COMPRESSED_VIDEOS_DIR}VIDEO_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.mp4")
+        val cacheFile = File(outputPath)
 
         if (Build.VERSION.SDK_INT < 18 && resultHeight > resultWidth && resultWidth != originalWidth && resultHeight != originalHeight) {
             val temp = resultHeight
@@ -682,5 +629,14 @@ public class MediaController {
             }
         }
         return lastCodecInfo
+    }
+
+    public data class CompressionProgress(val processedDuration: Long, val totalDuration: Long) {
+
+        val percentage: Long
+            get() = if (totalDuration != 0L)
+                (processedDuration / totalDuration.toFloat() * 100).toLong()
+            else 0L
+
     }
 }

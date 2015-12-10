@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.lalongooo.videocompressor.video;
+package com.hole19golf.videocompressor.video;
 
 import android.annotation.TargetApi;
 import android.graphics.SurfaceTexture;

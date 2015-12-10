@@ -7,6 +7,7 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.provider.OpenableColumns;
 import android.util.Log;
 import android.view.View;
@@ -14,11 +15,13 @@ import android.widget.EditText;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
+import com.hole19golf.videocompressor.video.MediaController;
 import com.lalongooo.videocompressor.file.FileUtils;
-import com.lalongooo.videocompressor.progress.CompressionProgress;
-import com.lalongooo.videocompressor.video.MediaController;
 
 import java.io.File;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 import rx.Observer;
 import rx.android.schedulers.AndroidSchedulers;
@@ -115,30 +118,41 @@ public class MainActivity extends Activity {
     public void compress(View v) {
         Log.d(TAG, "Start video compression");
         MediaController mediaController = new MediaController();
-        mediaController.compressVideo(tempFile.getPath());
+        String outputPath = tempFile.getParent() + "/" + new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date()) + ".mp4";
+        String cacheFileOutputPath = Environment.getExternalStorageDirectory() + File.separator + Config.VIDEO_COMPRESSOR_APPLICATION_DIR_NAME +
+                Config.VIDEO_COMPRESSOR_COMPRESSED_VIDEOS_DIR + new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date()) + ".mp4";
+
+        Log.d(TAG, "Compressed filepath: " + cacheFileOutputPath);
+        mediaController.compressVideo(tempFile.getPath(), cacheFileOutputPath);
         progressBar.setVisibility(View.VISIBLE);
         mediaController.getProgressSubject()
                 .subscribeOn(Schedulers.newThread())
                 .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(new Observer<CompressionProgress>() {
+                .subscribe(new Observer<MediaController.CompressionProgress>() {
                     @Override
                     public void onCompleted() {
                         Log.d(TAG, "Ended compression");
-                        progressBar.setVisibility(View.GONE);
+                        clean();
                     }
 
                     @Override
                     public void onError(Throwable e) {
                         Log.e(TAG, e.getMessage());
-                        progressBar.setVisibility(View.GONE);
+                        clean();
                     }
 
                     @Override
-                    public void onNext(CompressionProgress compressionProgress) {
+                    public void onNext(MediaController.CompressionProgress compressionProgress) {
                         float percentage = compressionProgress.getPercentage();
                         progressTv.setText("Progress: " + percentage);
                     }
                 });
+    }
 
+    private void clean() {
+        File file = new File(tempFile.getPath());
+        file.delete();
+
+        progressBar.setVisibility(View.GONE);
     }
 }

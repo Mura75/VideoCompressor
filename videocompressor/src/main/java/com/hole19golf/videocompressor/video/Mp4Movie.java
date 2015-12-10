@@ -6,12 +6,10 @@
  * Copyright Nikolai Kudashov, 2013-2014.
  */
 
-package com.lalongooo.videocompressor.video;
+package com.hole19golf.videocompressor.video;
 
 import android.annotation.TargetApi;
 import android.media.MediaCodec;
-import android.media.MediaCodecInfo;
-import android.media.MediaCodecList;
 import android.media.MediaFormat;
 
 import com.googlecode.mp4parser.util.Matrix;

@@ -17,12 +17,7 @@
 package com.lalongooo.videocompressor.video
 
 import android.annotation.TargetApi
-import android.opengl.EGL14
-import android.opengl.EGLConfig
-import android.opengl.EGLContext
-import android.opengl.EGLDisplay
-import android.opengl.EGLExt
-import android.opengl.EGLSurface
+import android.opengl.*
 import android.os.Build
 import android.view.Surface
 

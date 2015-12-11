@@ -1,4 +1,5 @@
 package com.hole19golf.videocompressor.video
+
 import android.media.*
 import android.os.Build
 import android.util.Log
@@ -8,12 +9,40 @@ import wseemann.media.FFmpegMediaMetadataRetriever
 import java.io.File
 import java.nio.ByteBuffer
 
-public class MediaController {
+/**
+ * A compressor for videos using Android API. This class compresses videos made by devices with at least
+ * api 16. However, it is only certain that will work with 18+ API devices. Be CAUTIOUS when using this.
+ *
+ * The client of this class should call [VideoCompressor.compressVideo] to begin the compression process.
+ *
+ * This code is based on the one one presented on https://github.com/lalongooo/VideoCompressor and
+ * https://github.com/DrKLO/Telegram
+ */
+public class VideoCompressor {
 
+    val TAG = this.javaClass.name
+
+    /**
+     * Reactive subject that can be used to track the progress of the compression
+     */
     var progressSubject = BehaviorSubject.create(CompressionProgress(0, 0))
 
+    /**
+     * Takes a video located at [path] and returns its compressed version at [outputPath].
+     *
+     * Optionally the client can pass some [options] to a more speficic compression. Otherwise
+     * it will use the default options.
+     */
+    @JvmOverloads
+    fun compressVideo(path: String, outputPath: String, options: CompressionOptions = CompressionOptions()) {
+        Thread(Runnable {
+            convertVideo(path, outputPath, options)
+        }).start()
+    }
+
+
     @Throws(Exception::class)
-    private fun readAndWriteTrack(extractor: MediaExtractor, mediaMuxer: MP4Builder, info: MediaCodec.BufferInfo, start: Long, end: Long, file: File, isAudio: Boolean): Long {
+    private fun readAndWriteTrack(extractor: MediaExtractor, mediaMuxer: MP4Builder, info: MediaCodec.BufferInfo, start: Long, end: Long, isAudio: Boolean): Long {
         val trackIndex = selectTrack(extractor, isAudio)
         if (trackIndex >= 0) {
             extractor.selectTrack(trackIndex)
@@ -85,13 +114,7 @@ public class MediaController {
         return -5
     }
 
-    fun compressVideo(path: String, outputPath: String) {
-        Thread(Runnable {
-            convertVideo(path, outputPath)
-        }).start()
-    }
-
-    private fun convertVideo(path: String, outputPath: String): Boolean {
+    private fun convertVideo(path: String, outputPath: String, options: CompressionOptions): Boolean {
 
         val mediaRetriever = MediaMetadataRetriever()
         mediaRetriever.setDataSource(path)
@@ -115,15 +138,16 @@ public class MediaController {
         val startTime: Long = -1L
         val endTime: Long = -1L
 
-        var resultWidth = 640
-        var resultHeight = 360
+        var resultWidth = options.width ?: 640
+        var resultHeight = options.height ?: 360
 
         var rotationValue = Integer.valueOf(rotation)!!
         val originalWidth = Integer.valueOf(width)!!
         val originalHeight = Integer.valueOf(height)!!
         val originalDuration = duration.toLong()
 
-        val bitrate = 400000
+
+        val bitrate = options.bitrate ?: optimalBitrate(resultWidth, resultHeight)
         var rotateRender = 0
 
         progressSubject.onNext(CompressionProgress(0, originalDuration))
@@ -228,11 +252,11 @@ public class MediaController {
                                     } else if (codecName == "OMX.TI.DUCATI1.VIDEO.H264E") {
                                         processorType = PROCESSOR_TYPE_TI
                                     }
-                                    Log.e("tmessages", "codec = " + codecInfo.name + " manufacturer = " + manufacturer + "device = " + Build.MODEL)
+                                    Log.e(TAG, "codec = " + codecInfo.name + " manufacturer = " + manufacturer + "device = " + Build.MODEL)
                                 }
 
                             }
-                            Log.e("tmessages", "colorFormat = " + colorFormat)
+                            Log.e(TAG, "colorFormat = " + colorFormat)
 
                             var resultHeightAligned = resultHeight
                             var padding = 0
@@ -310,7 +334,6 @@ public class MediaController {
                                             val processedDuration = extractor.sampleTime / 1000000
                                             val totalDuration = originalDuration / 1000
                                             progressSubject.onNext(CompressionProgress(processedDuration, totalDuration))
-                                            Log.d("VideoCompressor", "Internal Progress: $processedDuration/$totalDuration")
 
                                             val inputBuf: ByteBuffer
                                             if (Build.VERSION.SDK_INT < 21) {
@@ -416,7 +439,7 @@ public class MediaController {
 
                                         } else if (decoderStatus == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                                             val newFormat = decoder.outputFormat
-                                            Log.e("tmessages", "newFormat = " + newFormat)
+                                            Log.e(TAG, "newFormat = " + newFormat)
                                         } else if (decoderStatus < 0) {
                                             progressSubject.onError(RuntimeException("unexpected result from decoder.dequeueOutputBuffer: " + decoderStatus))
                                         } else {
@@ -435,7 +458,7 @@ public class MediaController {
                                             if (startTime > 0 && videoTime == -1L) {
                                                 if (info.presentationTimeUs < startTime) {
                                                     doRender = false
-                                                    Log.e("tmessages", "drop frame startTime = " + startTime + " present time = " + info.presentationTimeUs)
+                                                    Log.e(TAG, "drop frame startTime = " + startTime + " present time = " + info.presentationTimeUs)
                                                 } else {
                                                     videoTime = info.presentationTimeUs
                                                 }
@@ -447,7 +470,7 @@ public class MediaController {
                                                     outputSurface.awaitNewImage()
                                                 } catch (e: Exception) {
                                                     errorWait = true
-                                                    Log.e("tmessages", e.message)
+                                                    Log.e(TAG, e.message)
                                                 }
 
                                                 if (!errorWait) {
@@ -465,14 +488,14 @@ public class MediaController {
                                                             convertVideoFrame(rgbBuf, yuvBuf, colorFormat, resultWidth, resultHeight, padding, swapUV)
                                                             encoder.queueInputBuffer(inputBufIndex, 0, bufferSize, info.presentationTimeUs, 0)
                                                         } else {
-                                                            Log.w("tmessages", "input buffer not available")
+                                                            Log.w(TAG, "input buffer not available")
                                                         }
                                                     }
                                                 }
                                             }
                                             if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
                                                 decoderOutputAvailable = false
-                                                Log.e("tmessages", "decoder stream end")
+                                                Log.e(TAG, "decoder stream end")
                                                 if (Build.VERSION.SDK_INT >= 18) {
                                                     encoder.signalEndOfInputStream()
                                                 } else {
@@ -490,7 +513,7 @@ public class MediaController {
                                 videoStartTime = videoTime
                             }
                         } catch (e: Exception) {
-                            Log.e("tmessages", e.message)
+                            Log.e(TAG, e.message)
                             error = true
                         }
 
@@ -510,17 +533,17 @@ public class MediaController {
                         }
                     }
                 } else {
-                    val videoTime = readAndWriteTrack(extractor, mediaMuxer, info, startTime, endTime, cacheFile, false)
+                    val videoTime = readAndWriteTrack(extractor, mediaMuxer, info, startTime, endTime, false)
                     if (videoTime != -1L) {
                         videoStartTime = videoTime
                     }
                 }
                 if (!error) {
-                    readAndWriteTrack(extractor, mediaMuxer, info, videoStartTime, endTime, cacheFile, true)
+                    readAndWriteTrack(extractor, mediaMuxer, info, videoStartTime, endTime, true)
                     progressSubject.onCompleted()
                 }
             } catch (e: Exception) {
-                Log.e("tmessages", e.message)
+                Log.e(TAG, e.message)
                 progressSubject.onError(e)
             } finally {
                 if (extractor != null) {
@@ -530,12 +553,12 @@ public class MediaController {
                     try {
                         mediaMuxer.finishMovie()
                     } catch (e: Exception) {
-                        Log.e("tmessages", e.message)
+                        Log.e(TAG, e.message)
                         progressSubject.onError(e)
                     }
 
                 }
-                Log.e("tmessages", "time = " + (System.currentTimeMillis() - time))
+                Log.e(TAG, "time = " + (System.currentTimeMillis() - time))
             }
         } else {
             return false
@@ -571,6 +594,26 @@ public class MediaController {
         return outputFormat
     }
 
+    private fun optimalBitrate(width: Int, height: Int): Int {
+        if (width == 1920 || height == 1080) {
+            return 7500 * 1000
+        }
+
+        if (width == 1280 || height == 720) {
+            return 5500 * 1000
+        }
+
+        if (width == 640 || height == 480) {
+            return 1500 * 1000
+        }
+
+        if (width == 320 || height == 240) {
+            return 400 * 1000
+        }
+
+        return 4000 * 1000
+    }
+
     companion object {
 
         val MIME_TYPE = "video/avc"
@@ -581,7 +624,7 @@ public class MediaController {
         private val PROCESSOR_TYPE_SEC = 4
         private val PROCESSOR_TYPE_TI = 5
 
-        val instance: MediaController = MediaController()
+        val instance: VideoCompressor = VideoCompressor()
 
         fun selectColorFormat(codecInfo: MediaCodecInfo, mimeType: String): Int {
             val capabilities = codecInfo.getCapabilitiesForType(mimeType)
@@ -608,7 +651,7 @@ public class MediaController {
 
     external fun convertVideoFrame(src: ByteBuffer, dest: ByteBuffer, destFormat: Int, width: Int, height: Int, padding: Int, swap: Int): Int
 
-    fun selectCodec(mimeType: String): MediaCodecInfo? {
+    private fun selectCodec(mimeType: String): MediaCodecInfo? {
         val numCodecs = MediaCodecList.getCodecCount()
         var lastCodecInfo: MediaCodecInfo? = null
         for (i in 0..numCodecs - 1) {

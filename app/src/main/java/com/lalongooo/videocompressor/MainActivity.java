@@ -15,7 +15,7 @@ import android.widget.EditText;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
-import com.hole19golf.videocompressor.video.MediaController;
+import com.hole19golf.videocompressor.video.VideoCompressor;
 import com.lalongooo.videocompressor.file.FileUtils;
 
 import java.io.File;
@@ -117,8 +117,7 @@ public class MainActivity extends Activity {
 
     public void compress(View v) {
         Log.d(TAG, "Start video compression");
-        MediaController mediaController = new MediaController();
-        String outputPath = tempFile.getParent() + "/" + new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date()) + ".mp4";
+        VideoCompressor mediaController = new VideoCompressor();
         String cacheFileOutputPath = Environment.getExternalStorageDirectory() + File.separator + Config.VIDEO_COMPRESSOR_APPLICATION_DIR_NAME +
                 Config.VIDEO_COMPRESSOR_COMPRESSED_VIDEOS_DIR + new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date()) + ".mp4";
 
@@ -128,7 +127,7 @@ public class MainActivity extends Activity {
         mediaController.getProgressSubject()
                 .subscribeOn(Schedulers.newThread())
                 .observeOn(AndroidSchedulers.mainThread())
-                .subscribe(new Observer<MediaController.CompressionProgress>() {
+                .subscribe(new Observer<VideoCompressor.CompressionProgress>() {
                     @Override
                     public void onCompleted() {
                         Log.d(TAG, "Ended compression");
@@ -142,7 +141,7 @@ public class MainActivity extends Activity {
                     }
 
                     @Override
-                    public void onNext(MediaController.CompressionProgress compressionProgress) {
+                    public void onNext(VideoCompressor.CompressionProgress compressionProgress) {
                         float percentage = compressionProgress.getPercentage();
                         progressTv.setText("Progress: " + percentage);
                     }

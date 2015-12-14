@@ -8,6 +8,8 @@ import rx.subjects.BehaviorSubject
 import wseemann.media.FFmpegMediaMetadataRetriever
 import java.io.File
 import java.nio.ByteBuffer
+import java.io.FileInputStream
+
 
 /**
  * A compressor for videos using Android API. This class compresses videos made by devices with at least
@@ -138,14 +140,16 @@ public class VideoCompressor {
         val startTime: Long = -1L
         val endTime: Long = -1L
 
-        var resultWidth = options.width ?: 640
-        var resultHeight = options.height ?: 360
-
         var rotationValue = Integer.valueOf(rotation)!!
         val originalWidth = Integer.valueOf(width)!!
         val originalHeight = Integer.valueOf(height)!!
         val originalDuration = duration.toLong()
 
+        Log.d(TAG, "Original Width: $originalWidth")
+        Log.d(TAG, "Original Height: $originalHeight")
+
+        var resultWidth: Int = options.width ?: getClosestWidth(originalWidth)
+        var resultHeight: Int = options.height ?: getClosestHeight(originalHeight)
 
         val bitrate = options.bitrate ?: optimalBitrate(resultWidth, resultHeight)
         var rotateRender = 0
@@ -153,32 +157,31 @@ public class VideoCompressor {
         progressSubject.onNext(CompressionProgress(0, originalDuration))
 
         val cacheFile = File(outputPath)
-
         if (Build.VERSION.SDK_INT < 18 && resultHeight > resultWidth && resultWidth != originalWidth && resultHeight != originalHeight) {
-            val temp = resultHeight
             resultHeight = resultWidth
-            resultWidth = temp
+            resultWidth = calculateAspectRatioWidth(originalWidth.toFloat(), originalHeight.toFloat(), resultHeight.toFloat()).toInt()
             rotationValue = 90
             rotateRender = 270
         } else if (Build.VERSION.SDK_INT > 20) {
             if (rotationValue == 90) {
-                val temp = resultHeight
                 resultHeight = resultWidth
-                resultWidth = temp
+                resultWidth = calculateAspectRatioWidth(originalWidth.toFloat(), originalHeight.toFloat(), resultHeight.toFloat()).toInt()
                 rotationValue = 0
                 rotateRender = 270
             } else if (rotationValue == 180) {
                 rotateRender = 180
                 rotationValue = 0
             } else if (rotationValue == 270) {
-                val temp = resultHeight
-                resultHeight = resultWidth
-                resultWidth = temp
+                resultWidth = resultHeight
+                resultHeight = calculateAspectRationHeight(originalWidth.toFloat(), originalHeight.toFloat(), resultWidth.toFloat()).toInt()
                 rotationValue = 0
                 rotateRender = 90
             }
         }
 
+        Log.d(TAG, "Output width: " + resultWidth)
+        Log.d(TAG, "Output height: " + resultHeight)
+        Log.d(TAG, "Rotation: " + rotateRender)
 
         val inputFile = File(path)
         if (!inputFile.canRead()) {
@@ -540,8 +543,8 @@ public class VideoCompressor {
                 }
                 if (!error) {
                     readAndWriteTrack(extractor, mediaMuxer, info, videoStartTime, endTime, true)
-                    progressSubject.onCompleted()
                 }
+
             } catch (e: Exception) {
                 Log.e(TAG, e.message)
                 progressSubject.onError(e)
@@ -552,6 +555,7 @@ public class VideoCompressor {
                 if (mediaMuxer != null) {
                     try {
                         mediaMuxer.finishMovie()
+                        Log.d(TAG, "Finished movie");
                     } catch (e: Exception) {
                         Log.e(TAG, e.message)
                         progressSubject.onError(e)
@@ -563,6 +567,9 @@ public class VideoCompressor {
         } else {
             return false
         }
+
+        progressSubject.onNext(CompressionProgress(originalDuration, originalDuration))
+        progressSubject.onCompleted()
 
         inputFile.delete()
         return true
@@ -585,7 +592,7 @@ public class VideoCompressor {
         val outputFormat = MediaFormat.createVideoFormat(MIME_TYPE, resultWidth, resultHeight)
         outputFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, colorFormat)
         outputFormat.setInteger(MediaFormat.KEY_BIT_RATE, if (bitrate != 0) bitrate else 921600)
-        outputFormat.setInteger(MediaFormat.KEY_FRAME_RATE, 25)
+        outputFormat.setInteger(MediaFormat.KEY_FRAME_RATE, 40)
         outputFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 10)
         if (Build.VERSION.SDK_INT < 18) {
             outputFormat.setInteger("stride", resultWidth + 32)
@@ -613,6 +620,42 @@ public class VideoCompressor {
 
         return 4000 * 1000
     }
+
+    private fun getClosestWidth(width: Int): Int {
+        var measures = arrayOf(320, 352, 480, 640, 768, 800, 854, 1024, 1152, 1280)
+        if (measures.containsRaw(width)) {
+            return width
+        } else {
+            for (measure in measures) {
+                if (measure > width) {
+                    return measure
+                }
+
+            }
+        }
+
+        return measures.last()
+    }
+
+    private fun getClosestHeight(height: Int): Int {
+        var measures = arrayOf(200, 288, 320, 360, 480, 576, 600, 720, 768, 800, 854, 864, 900, 960, 1024)
+        if (measures.containsRaw(height)) {
+            return height
+        } else {
+            for (measure in measures) {
+                if (measure > height) {
+                    return measure
+                }
+
+            }
+        }
+
+        return measures.last()
+    }
+
+    private fun calculateAspectRationHeight(originalWidth: Float, originalHeight: Float, newWidth: Float) = (originalHeight.div(originalWidth)) * newWidth
+
+    private fun calculateAspectRatioWidth(originalWidth: Float, originalHeight: Float, newHeight: Float) = newHeight * (originalWidth.div(originalHeight))
 
     companion object {
 
@@ -649,7 +692,7 @@ public class VideoCompressor {
     }
 
 
-    external fun convertVideoFrame(src: ByteBuffer, dest: ByteBuffer, destFormat: Int, width: Int, height: Int, padding: Int, swap: Int): Int
+    private external fun convertVideoFrame(src: ByteBuffer, dest: ByteBuffer, destFormat: Int, width: Int, height: Int, padding: Int, swap: Int): Int
 
     private fun selectCodec(mimeType: String): MediaCodecInfo? {
         val numCodecs = MediaCodecList.getCodecCount()

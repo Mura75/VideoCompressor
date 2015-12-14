@@ -118,7 +118,7 @@ public class MainActivity extends Activity {
     public void compress(View v) {
         Log.d(TAG, "Start video compression");
         VideoCompressor mediaController = new VideoCompressor();
-        String cacheFileOutputPath = Environment.getExternalStorageDirectory() + File.separator + Config.VIDEO_COMPRESSOR_APPLICATION_DIR_NAME +
+        final String cacheFileOutputPath = Environment.getExternalStorageDirectory() + File.separator + Config.VIDEO_COMPRESSOR_APPLICATION_DIR_NAME +
                 Config.VIDEO_COMPRESSOR_COMPRESSED_VIDEOS_DIR + new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date()) + ".mp4";
 
         Log.d(TAG, "Compressed filepath: " + cacheFileOutputPath);
@@ -130,7 +130,6 @@ public class MainActivity extends Activity {
                 .subscribe(new Observer<VideoCompressor.CompressionProgress>() {
                     @Override
                     public void onCompleted() {
-                        Log.d(TAG, "Ended compression");
                         clean();
                     }
 
